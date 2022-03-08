@@ -13,18 +13,28 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
-	file   = flag.String("f", "/var/log/v2ray/access.log", "输入文件")
-	emaill = flag.String("e", "", "email")
-	out    = flag.String("o", "out.csv", "输出文件")
-	ipp    = flag.Bool("ip", false, "获取使用者ip")
-	urll   = flag.Bool("url", false, "获取访问路径")
-	c      = flag.Int("c", 20, "多协程分析文件")
-	o      *os.File
-	lock   sync.Mutex
-	region *ip2region.Ip2Region
+	file           = flag.String("f", "access.log", "输入文件")
+	emaill         = flag.String("e", "", "email")
+	user_addr      = flag.String("ua", "user_addr.csv", "输出文件")
+	request_addr   = flag.String("ra", "request_addr.csv", "输出文件")
+	telegram_token = flag.String("tk", "", "telegram token")
+	chat_id        = flag.String("ci", "", "telegram chat id")
+	ipp            = flag.Bool("ip", false, "获取使用者ip")
+	urll           = flag.Bool("url", false, "获取访问路径")
+	c              = flag.Int("c", 20, "多协程分析文件")
+	ua             *os.File
+	ra             *os.File
+	lock           sync.Mutex
+	region         *ip2region.Ip2Region
+)
+
+const (
+	telegram_bot_url_prefix = "https://api.telegram.org/bot"
+	telegram_bot_url_suffix = "/sendDocument"
 )
 
 type data struct {
@@ -33,13 +43,18 @@ type data struct {
 }
 
 func main() {
+	timeNow := time.Now()
+	var timeFormat = timeNow.Format("2006/01/02")
+	fmt.Println(timeFormat)
 	flag.Parse()
 	f, err := os.Open(*file)
 	if err != nil {
 		panic(err)
 	}
-	o, err = os.OpenFile(*out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-	o.WriteString("\xEF\xBB\xBF") //添加utf-8 BOM头，识别为uft-8编码，防止中文乱码
+	ua, err = os.OpenFile(*user_addr, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	ra, err = os.OpenFile(*request_addr, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	ua.WriteString("\xEF\xBB\xBF") //添加utf-8 BOM头，识别为uft-8编码，防止中文乱码
+	ra.WriteString("\xEF\xBB\xBF") //添加utf-8 BOM头，识别为uft-8编码，防止中文乱码
 	if err != nil {
 		panic(err)
 	}
@@ -65,12 +80,9 @@ func main() {
 				w.Done()
 			}()
 			arr := strings.Split(line, " ")
-			if len(arr) == 6 {
+			if len(arr) == 6 && arr[0] == timeFormat {
 				//time := bytes.Join(arr[:2], []byte(" "))
 				// todo 完成一个ip对应多个路径
-				var ippp = *ipp
-				fmt.Println(ippp)
-
 				ip := strings.Split(arr[2], ":")[0]
 				ips = toMap(ips, ip)
 
@@ -80,10 +92,10 @@ func main() {
 				//port := uri[2]
 				urls = toMap(urls, url)
 
-				if !*ipp && !*urll {
-					o.WriteString(line + "\n")
-					o.WriteString("\n")
-				}
+				//if !*ipp && !*urll {
+				//	o.WriteString(line + "\n")
+				//	o.WriteString("\n")
+				//}
 
 			}
 
@@ -92,7 +104,7 @@ func main() {
 	w.Wait()
 	// ip
 
-	o.WriteString("ip,频率,位置\n")
+	ua.WriteString("ip,频率,位置\n")
 	var ipData strings.Builder
 	sort.Slice(ips, func(i, j int) bool {
 		return ips[i].value > ips[j].value
@@ -119,11 +131,11 @@ func main() {
 			ipData.WriteByte('\n')
 		}
 	}
-	o.WriteString(ipData.String())
-
+	ua.WriteString(ipData.String())
+	ua.Close()
 	// url
 
-	o.WriteString("url,频率\n")
+	ra.WriteString("url,频率\n")
 	var data strings.Builder
 	sort.Slice(urls, func(i, j int) bool {
 		return urls[i].value > urls[j].value
@@ -134,9 +146,9 @@ func main() {
 		data.WriteString(strconv.Itoa(v.value))
 		data.WriteByte('\n')
 	}
-	o.WriteString(data.String())
+	ra.WriteString(data.String())
 
-	o.Close()
+	ra.Close()
 }
 
 func toMap(m []data, key string) []data {
@@ -194,3 +206,29 @@ func download(url string) error {
 	fmt.Println("download done")
 	return nil
 }
+
+//func telegramBot(fileAddr string) {
+//	buf := new(bytes.Buffer)
+//	w := multipart.NewWriter(buf)
+//	fw, err := w.CreateFormFile("file", "1d595495-0580-49ec-b96c-cc3346096718")
+//	req, err := http.NewRequest("POST", "http://localhost:8080/info", buf)
+//	if err != nil {
+//		fmt.Println("req err: ", err)
+//		return
+//	}
+//	req.Header.Set("Content-Type", w.FormDataContentType())
+//
+//	http.DefaultClient.Do(req)
+//	//if err != nil {
+//	//	fmt.Println("resp err: ", err)
+//	//	return
+//	//}
+//	//defer resp.Body.Close()
+//	//
+//	//if resp.StatusCode != 200 {
+//	//	return errors.New("resp status:" + fmt.Sprint(resp.StatusCode))
+//	//}
+//	//
+//	//return nil
+//
+//}

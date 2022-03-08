@@ -21,3 +21,6 @@ coverage-report
 test-output
 *.txt
 .DS_Store
+
+access.log
+*.csv
